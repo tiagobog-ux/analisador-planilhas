@@ -1,4 +1,3 @@
-import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import streamlit as st
@@ -8,124 +7,95 @@ st.set_page_config(layout="wide")
 
 st.title("Dashboard Automático de Planilhas")
 
-# descobrir pasta do projeto
-pasta_projeto = os.path.dirname(os.path.abspath(__file__))
+st.write("Envie uma ou mais planilhas Excel com colunas 'Nome' e 'Valor'.")
 
-# caminho da pasta planilhas
-pasta_planilhas = os.path.join(pasta_projeto, "planilhas")
+arquivos = st.file_uploader(
+    "Escolha os arquivos Excel",
+    type=["xlsx"],
+    accept_multiple_files=True
+)
 
-if st.button("Analisar planilhas da pasta"):
+if arquivos:
 
     dados_consolidados = []
 
-    if not os.path.exists(pasta_planilhas):
-        st.error("A pasta 'planilhas' não foi encontrada.")
-    else:
+    for arquivo in arquivos:
+        df = pd.read_excel(arquivo)
+        df["Arquivo"] = arquivo.name
+        dados_consolidados.append(df)
 
-        arquivos_excel = [
-            arquivo for arquivo in os.listdir(pasta_planilhas)
-            if arquivo.lower().endswith(".xlsx")
-        ]
+    consolidado = pd.concat(dados_consolidados, ignore_index=True)
 
-        if len(arquivos_excel) == 0:
-            st.warning("Nenhum arquivo Excel encontrado na pasta.")
+    total = len(consolidado)
+    soma = consolidado["Valor"].sum()
+    media = consolidado["Valor"].mean()
+    maior = consolidado["Valor"].max()
 
-        else:
+    col1, col2, col3, col4 = st.columns(4)
 
-            for arquivo in arquivos_excel:
+    col1.metric("Total Registros", total)
+    col2.metric("Soma Valores", round(soma, 2))
+    col3.metric("Valor Médio", round(media, 2))
+    col4.metric("Maior Valor", round(maior, 2))
 
-                caminho = os.path.join(pasta_planilhas, arquivo)
+    st.divider()
 
-                df = pd.read_excel(caminho)
+    valor_minimo = st.slider(
+        "Mostrar valores acima de:",
+        int(consolidado["Valor"].min()),
+        int(consolidado["Valor"].max()),
+        int(consolidado["Valor"].min())
+    )
 
-                df["Arquivo"] = arquivo
+    filtrado = consolidado[consolidado["Valor"] >= valor_minimo]
 
-                dados_consolidados.append(df)
+    st.subheader("Dados filtrados")
+    st.dataframe(filtrado)
 
-            consolidado = pd.concat(dados_consolidados, ignore_index=True)
+    st.divider()
 
-            # métricas
-            total = len(consolidado)
-            soma = consolidado["Valor"].sum()
-            media = consolidado["Valor"].mean()
-            maior = consolidado["Valor"].max()
+    ranking = consolidado.sort_values(by="Valor", ascending=False)
+    top10 = ranking.head(10)
+    bottom10 = ranking.tail(10)
 
-            col1, col2, col3, col4 = st.columns(4)
+    colA, colB = st.columns(2)
 
-            col1.metric("Total Registros", total)
-            col2.metric("Soma Valores", round(soma,2))
-            col3.metric("Valor Médio", round(media,2))
-            col4.metric("Maior Valor", round(maior,2))
+    with colA:
+        st.subheader("Top 10")
+        st.dataframe(top10)
 
-            st.divider()
+    with colB:
+        st.subheader("Bottom 10")
+        st.dataframe(bottom10)
 
-            # filtro
-            valor_minimo = st.slider(
-                "Mostrar valores acima de:",
-                int(consolidado["Valor"].min()),
-                int(consolidado["Valor"].max()),
-                int(consolidado["Valor"].min())
-            )
+    st.divider()
 
-            filtrado = consolidado[consolidado["Valor"] >= valor_minimo]
+    st.subheader("Gráfico Top 10")
+    fig, ax = plt.subplots()
+    ax.bar(top10["Nome"], top10["Valor"])
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    st.pyplot(fig)
 
-            st.subheader("Dados filtrados")
+    st.subheader("Distribuição dos Valores")
+    fig2, ax2 = plt.subplots()
+    ax2.hist(consolidado["Valor"], bins=10)
+    st.pyplot(fig2)
 
-            st.dataframe(filtrado)
+    output = BytesIO()
 
-            st.divider()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        consolidado.to_excel(writer, sheet_name="Dados", index=False)
+        top10.to_excel(writer, sheet_name="Top10", index=False)
+        bottom10.to_excel(writer, sheet_name="Bottom10", index=False)
 
-            ranking = consolidado.sort_values(by="Valor", ascending=False)
+    output.seek(0)
 
-            top10 = ranking.head(10)
-
-            bottom10 = ranking.tail(10)
-
-            colA, colB = st.columns(2)
-
-            with colA:
-                st.subheader("Top 10")
-                st.dataframe(top10)
-
-            with colB:
-                st.subheader("Bottom 10")
-                st.dataframe(bottom10)
-
-            st.divider()
-
-            st.subheader("Gráfico Top 10")
-
-            fig, ax = plt.subplots()
-
-            ax.bar(top10["Nome"], top10["Valor"])
-
-            plt.xticks(rotation=45)
-
-            st.pyplot(fig)
-
-            # gráfico distribuição
-            st.subheader("Distribuição dos Valores")
-
-            fig2, ax2 = plt.subplots()
-
-            ax2.hist(consolidado["Valor"], bins=10)
-
-            st.pyplot(fig2)
-
-            # gerar relatório excel
-
-            output = BytesIO()
-
-            with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-                consolidado.to_excel(writer, sheet_name="Dados", index=False)
-                top10.to_excel(writer, sheet_name="Top10", index=False)
-                bottom10.to_excel(writer, sheet_name="Bottom10", index=False)
-
-            output.seek(0)
-
-            st.download_button(
-                "Baixar relatório Excel",
-                data=output,
-                file_name="relatorio_dashboard.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+    st.download_button(
+        "Baixar relatório Excel",
+        data=output,
+        file_name="relatorio_dashboard.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+else:
+    st.info("Envie um ou mais arquivos Excel para começar.")
